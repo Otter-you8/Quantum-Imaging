@@ -1,29 +1,36 @@
 %% 各画素における強度相関関数を用いて、minus-coordinateを求める
-
 clear; clc; close all;
 fprintf('"Minus-coordinate"\n');
 fprintf('-----------------------------------------------------\n');
 % addpath('C:\MATLAB\intensity correlation\Functions\');
 
+%% 設定項目
+
 % フォルダのパスを指定
-folderPath = 'C:\Users\cs13\Pictures\EMCCD\251219差座標検証用';
+folderPath = 'C:\Users\cs13\Pictures\EMCCD\251112';
 %フォルダ内のtifファイルを取得
 fileList = dir(fullfile(folderPath, '*.tif'));
 % 計算するセット数
 dataSet = length(fileList);
 
 % 画像サイズ
-height = 201;
-width = 201;
+height = 200;
+width = 200;
 
 % bainary設定
-binary = true;
+binary = false;
 threshold_value = 540;
 
+% 上限閾値処理（宇宙線の除去）
+threshold_max = 5000;
+
 % 計算フレーム数の制限
-max_total_frames = 10000;  % ここで指定（例：1000枚で計算を打ち切る）
+max_total_frames = 2000000;  % ここで指定（例：1000枚で計算を打ち切る）
 current_total_frames = 0; % 現在の積算枚数カウンタ
 
+margin = 10;
+
+%% 相関計算
 
 % 強度相関関数
 intensity_corr1 = zeros(height^2,width^2); % 第1項
@@ -35,7 +42,7 @@ all_sum = zeros(height,width);
 numFrames = 0;
 figNumber = 1;
 
-tic
+tStart = tic;
 for dataSetNumber = 1:dataSet
     
     if current_total_frames >= max_total_frames
@@ -64,39 +71,69 @@ for dataSetNumber = 1:dataSet
         end
     end
 
+    % フレーム数が計算（相関計算には最低2枚必要）に足りない場合の安全策
+    if frames_in_file < 2
+        fprintf('  Skipping: Not enough frames (%d) for correlation.\n', frames_in_file);
+        continue;
+    end
+
     N = size(original_array,3);
 
-    % フレーム数が計算（相関計算には最低2枚必要）に足りない場合の安全策
-    if N < 2
-        fprintf('  Skipping: Not enough frames (%d) for correlation.\n', N);
-        continue;
+    % 総フレーム数
+    current_total_frames = current_total_frames + N;
+    num_frames(dataSetNumber) = current_total_frames;
+
+    % 各フレームの最大値に対して閾値以下のフレームを特定する（宇宙線の影響があるフレームを除去）
+    clear max_intensity is_valid_frame removed_frame
+    max_intensity = squeeze(max(original_array, [], [1,2]));
+    is_valid_frame = max_intensity < threshold_max;
+    original_array = original_array(:, :, is_valid_frame);
+    
+    removed_frame = find(~is_valid_frame);
+
+    if ~isempty(removed_frame)
+        fprintf(' 除去されたフレーム: %d\n', removed_frame);
     end
 
     if binary == true
         original_array = single(original_array > threshold_value);
     end
 
-    % 総フレーム数
-    current_total_frames = current_total_frames + N;
-    num_frames(dataSetNumber) = current_total_frames;
+    N = size(original_array,3);
+
+    if N < 2
+        fprintf('  Skipping: Not enough frames after filtering (N=%d).\n', N);
+        continue; % このデータセット(ファイル)の処理を飛ばして次へ行く
+    end
     
     %総和画像
     all_sum = all_sum + sum(original_array,3);
+
+%     % 行のゆらぎ補正
+%     for i = 1:N
+%         raw_frame = original_array(:,:,i);
+%         row_median = median(raw_frame, 2);
+%         frame_final = raw_frame - row_median;
+% 
+%         original_array(:,:,i) = frame_final;
+%     end
+
+
 
     fprintf(' Calculation of intensity correlation...\n');
 
     % 第１項
     fprintf('  corr1.\n');
-    tic
+    
     reshaped_array = reshape(permute(original_array,[2,1,3]), 1,height*width,[]); 
     reshaped_array = squeeze(reshaped_array);
     intensity_corr1 = intensity_corr1 + (reshaped_array * reshaped_array')/N;
     intensity_corr1(1:size(intensity_corr1,1)+1:end) = 0; % 自己相関は０
-    toc
+    
 
     % 第２項
     fprintf('  corr2.\n');
-    tic
+    
     reshaped_array_1 = original_array(:,:,1:N-1);
     reshaped_array_1 = reshape(permute(reshaped_array_1,[2,1,3]), 1,height*width,[]);
     reshaped_array_1 = squeeze(reshaped_array_1);
@@ -107,10 +144,10 @@ for dataSetNumber = 1:dataSet
 
     intensity_corr2 = intensity_corr2 + (reshaped_array_1*reshaped_array_2' + reshaped_array_2*reshaped_array_1')/(2*(N-1));
     intensity_corr2(1:size(intensity_corr2,1)+1:end) = 0;
-    toc
+    
 
 end
-toc
+CalculationTime = toc(tStart);
 
 % 最終計算結果
 intensityCorr_all = intensity_corr1 - intensity_corr2; % ここでは(height×width)×(height×width) 配列
@@ -162,13 +199,13 @@ for x = 1:width
         idx = (y-1)*height + x;
         currentMap = intensityCorr_all(:,:,idx);
 
-        fprintf('progress >>> (%d, %d)', x,y);
+        % fprintf('progress >>> (%d, %d)', x,y);
         % minus-coordinate用の配列におけるスタート位置を求める
         y_start = height + 1 - (y-1);
         y_end = y_start + (height-1);
         x_start = width + 1 - (x-1);
         x_end = x_start + (width-1);
-        fprintf('    y : %d ~ %d, x : %d ~ %d\n', y_start,y_end, x_start,x_end);
+        % fprintf('    y : %d ~ %d, x : %d ~ %d\n', y_start,y_end, x_start,x_end);
 
         % minus-coordinate配列を更新
         minusCoordinate(y_start:y_end, x_start:x_end) = minusCoordinate(y_start:y_end, x_start:x_end) + currentMap;
@@ -204,7 +241,6 @@ cy = ceil((h+1)/2);
 
 % smearingの補正
 minusCoordinate(cy,:) =  (minusCoordinate(cy-1,:) + minusCoordinate(cy+1,:))/2;
-
 
 
 % 切り取り
