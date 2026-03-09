@@ -25,7 +25,7 @@ threshold_value = 540;
 threshold_max = 20000;
 
 % 計算フレーム数の制限
-max_total_frames = 1000000;  % ここで指定（例：1000枚で計算を打ち切る）
+max_total_frames = 10000;  % ここで指定（例：1000枚で計算を打ち切る）
 current_total_frames = 0; % 現在の積算枚数カウンタ
 
 margin = 10;
