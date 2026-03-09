@@ -6,7 +6,12 @@ fprintf('-----------------------------------------------------\n');
 
 %% パラメータ設定
 % フォルダのパス設定
-folderPath = 'C:\Users\cs13\Pictures\EMCCD\Correlation\260123_20ms_NoBFP';
+folderPath = uigetdir(pwd, 'TIFFファイルが含まれるフォルダを選択してください');
+if folderPath == 0
+    fprintf('フォルダの選択がキャンセルされました。処理を終了します。\n');
+    return; % キャンセル時は処理を終了
+end
+
 %フォルダ内のtifファイルを取得
 fileList = dir(fullfile(folderPath, '*.tif'));
 % 計算するセット数
