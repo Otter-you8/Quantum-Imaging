@@ -6,24 +6,27 @@ fprintf('-----------------------------------------------------\n');
 
 %% パラメータ設定
 % フォルダのパス設定
-folderPath = 'C:\Users\cs13\Pictures\EMCCD\251219_Correlation';
+folderPath = 'C:\Users\cs13\Pictures\EMCCD\Correlation\260123_20ms_NoBFP';
 %フォルダ内のtifファイルを取得
 fileList = dir(fullfile(folderPath, '*.tif'));
 % 計算するセット数
 dataSet = length(fileList);
 
 % 上限閾値処理（異常イベントの除去）
-threshold_max = 5000;
+threshold_max = 30000;
 
 % 計算フレーム数の制限
-max_total_frames = 3000000;  % ここで指定（例：1000枚で計算を打ち切る）
+max_total_frames = 1000000;  % ここで指定（例：1000枚で計算を打ち切る）
 current_total_frames = 0; % 現在の積算枚数カウンタ
 
 % プロット設定
-cropSize = 100; % 相関マップとして切り出すサイズ
+cropSize = 50; % 相関マップとして切り出すサイズ
 
 % 相関計算に使ったフレーム数
 valid_frames_count = 0;
+
+% 移動平均のフレーム数
+half_window = 1000;
 
 %% 相関計算
 
@@ -43,6 +46,8 @@ padW = 2*Width;
 
 totalAutoCorr = zeros(padH, padW);
 totalCrossCorr = zeros(padH, padW);
+
+All_Sum = zeros(Height, Width);
 
 tStart = tic;
 for dataSetNumber = 1:dataSet
@@ -105,10 +110,17 @@ for dataSetNumber = 1:dataSet
         fprintf('  Skipping: Not enough frames after filtering (N=%d).\n', N);
         continue; % このデータセット(ファイル)の処理を飛ばして次へ行く
     end
+
+    All_Sum = All_Sum + sum(original_array, 3);
     
     % 平均減算
-    mean_Image = mean(original_array,3);
-    fluctuations = original_array - mean_Image;
+%     mean_Image = mean(original_array,3);
+%     fluctuations = original_array - mean_Image;
+
+    background_stack = movmean(original_array, [half_window, half_window], 3);
+    fluctuations = original_array - background_stack;
+
+%     fluctuations = original_array;
     
     % FFTを用いた相関計算
     sumAutoCorr = zeros(padH, padW); % 同じフレームでの自己相関
@@ -117,9 +129,12 @@ for dataSetNumber = 1:dataSet
     % プログレスバー（ファイルごと）
     hWait = waitbar(0, sprintf('Dataset %d Calculation...', dataSetNumber));
 
-    for n = 1:N-1
+    for n = 1:N-2
         frame1 = fluctuations(:,:,n);
-        frame2 = fluctuations(:,:,n+1);
+        frame2 = fluctuations(:,:,n+2);
+
+        frame1 = frame1 - mean(frame1, 1);
+        frame2 = frame2 - mean(frame2, 1);
         
         F1 = fft2(frame1, padH, padW);
         F2 = fft2(frame2, padH, padW);
@@ -133,14 +148,14 @@ for dataSetNumber = 1:dataSet
         sumCrossCorr = sumCrossCorr + real(Corr2);
 
         if mod(n, 100) == 0
-            waitbar(n / (N-1), hWait);
+            waitbar(n / (N-2), hWait);
         end
     end
     close(hWait);
 
     totalAutoCorr = totalAutoCorr + sumAutoCorr;
     totalCrossCorr = totalCrossCorr + sumCrossCorr;
-    valid_frames_count = valid_frames_count + (N-1);
+    valid_frames_count = valid_frames_count + (N-2);
 
 
 end
@@ -160,30 +175,37 @@ cY = padH / 2 + 1;
 % finalCorr(cY, cX) = NaN;
 % finalCorr(cY, cX - 1) = NaN;
 % finalCorr(cY, cX + 1) = NaN;
+
 finalCorr(cY,:) = (finalCorr(cY+1,:) + finalCorr(cY-1,:)) / 2;
 
 rangeX = cX - cropSize : cX + cropSize;
 rangeY = cY - cropSize : cY + cropSize;
 
 finalCorrCropped = finalCorr(rangeY, rangeX);
+autoCorrCropped = avgAutoCorr(rangeY, rangeX);
 bgCorrCropped = avgCrossCorr(rangeY, rangeX);
 
 %% 結果のプロット
 
 figure(1);
-imagesc(avgAutoCorr(rangeY, rangeX));
+imagesc(autoCorrCropped);
 title('Raw Autocorrelation (Signal + Noise)');
-axis image; colormap('hot'); colorbar;
+axis image;  colorbar;
 
 figure(2);
 imagesc(bgCorrCropped);
 title('Background Correlation (Frame n & n+1)');
-axis image; colormap('hot'); colorbar;
+axis image;  colorbar;
 
 figure(3);
 imagesc(finalCorrCropped);
 title('Subtracted Result (Quantum Correlation)');
-axis image; colormap('hot'); colorbar;
+axis image;  colorbar;
+
+figure(4);
+imagesc(All_Sum);
+title('All Sum Image');
+axis image;  colormap("gray");  colorbar;
 
 % ピークの確認
 disp('解析完了。Figureを確認してください。');
