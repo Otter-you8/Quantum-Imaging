@@ -6,29 +6,8 @@ fprintf('-----------------------------------------------------\n');
 
 %% 設定項目
 
-% フォルダのパスを指定
-folderPath = 'D:\Takamoto\data\Correlation\260306\Main';
-%フォルダ内のtifファイルを取得
-fileList = dir(fullfile(folderPath, '*.tif'));
-% 計算するセット数
-dataSet = length(fileList);
-
-% 画像サイズ
-height = 200;
-width = 200;
-
-% bainary設定
-binary = false;
-threshold_value = 540;
-
-% 上限閾値処理（宇宙線の除去）
-threshold_max = 20000;
-
-% 計算フレーム数の制限
-max_total_frames = 10000;  % ここで指定（例：1000枚で計算を打ち切る）
-current_total_frames = 0; % 現在の積算枚数カウンタ
-
-margin = 10;
+% スクリプトを実行して設定変数をロード
+params;
 
 %% 相関計算
 
@@ -50,7 +29,7 @@ for dataSetNumber = 1:dataSet
         break; 
     end
 
-    fprintf('Dataset : %d\n', dataSetNumber);
+    fprintf('Dataset : %d / %d \n', dataSetNumber,dataSet);
     filePath = fullfile(folderPath, fileList(dataSetNumber).name);
    
     % tifファイル読み込み
